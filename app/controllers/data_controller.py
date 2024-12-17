@@ -33,3 +33,30 @@ def get_records():
     records = record_model.find_records_by_user(user_id)
 
     return jsonify({"records": records}), 200
+
+
+@jwt_required()
+def get_user_profiles():
+    db = current_app.db
+    user_profile_mapping_model = UserProfileMappingModel(db)
+
+
+    # Retrieve user_id from query parameters
+    user_id = request.args.get("user_id")
+    if not user_id:
+        return jsonify({"error": "user_id is required"}), 400
+
+
+    if not user_id:
+        return jsonify({"error": "user_id is required"}), 400
+
+    # Retrieve profiles associated with the user_id
+    profiles = user_profile_mapping_model.get_profiles_by_user_id(user_id)
+
+    if profiles is None:
+        return jsonify({"error": "No profiles found for this user_id"}), 404
+
+    return jsonify({
+        "user_id": user_id,
+        "profiles": profiles
+    }), 200

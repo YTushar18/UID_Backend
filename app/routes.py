@@ -1,5 +1,5 @@
 from app.controllers.auth_controller import register_user, login_user, refresh_token
-from app.controllers.data_controller import create_record, get_records
+from app.controllers.data_controller import create_record, get_records, get_user_profiles
 
 def register_routes(app):
 
@@ -14,3 +14,5 @@ def register_routes(app):
     # Protected Data Routes
     app.add_url_rule("/api/data", view_func=create_record, methods=["POST"])
     app.add_url_rule("/api/data", view_func=get_records, methods=["GET"])
+
+    app.add_url_rule("/api/user/profiles", view_func=get_user_profiles, methods=["GET"])

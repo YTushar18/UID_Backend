@@ -35,21 +35,35 @@ def register_user():
         client_model.create_client(email, password, org_name, admin_name, client_type)
         return jsonify({"message": "Client registered successfully"}), 201
 
+
 def login_user():
-    db = current_app.db  # Access the app's MongoDB client dynamically
+    db = current_app.db  # Get database instance
     user_model = UserModel(db)
 
+    # Parse input data
     data = request.get_json()
     email = data.get("email")
     password = data.get("password")
 
+    # Validate credentials
     user = user_model.validate_password(email, password)
     if not user:
         return jsonify({"message": "Invalid credentials"}), 401
 
-    access_token = create_access_token(identity=email)
-    refresh_token = create_refresh_token(identity=email)
-    return jsonify({"access_token": access_token, "refresh_token": refresh_token}), 200
+    # Extract user_id from user document
+    user_id = user["user_id"]
+
+    # Generate JWT tokens
+    access_token = create_access_token(identity=user_id)
+    refresh_token = create_refresh_token(identity=user_id)
+
+    # Return user_id with tokens
+    return jsonify({
+        "user_id": user_id,
+        "access_token": access_token,
+        "refresh_token": refresh_token
+    }), 200
+
 
 @jwt_required(refresh=True)
 def refresh_token():

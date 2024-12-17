@@ -112,3 +112,15 @@ class UserProfileMappingModel:
             "updated_at": datetime.now()
         }
         return self.collections.insert_one(record)
+
+    def get_profiles_by_user_id(self, user_id):
+        # Find all profile mappings for the user
+
+        print(user_id)
+        profiles = self.collections.find({"user_id": user_id}, {"_id": 0, "profile_id": 1})
+
+        if profiles:
+            # Extract the profile_id values
+            return [profile["profile_id"] for profile in profiles]
+        else:
+            return []
