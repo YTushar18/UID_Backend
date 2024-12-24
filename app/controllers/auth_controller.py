@@ -37,7 +37,7 @@ def register_user():
 
 
 def login_user():
-    db = current_app.db  # Get database instance
+    db = current_app.db
     user_model = UserModel(db)
 
     # Parse input data

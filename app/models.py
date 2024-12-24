@@ -37,6 +37,9 @@ class UserModel:
             return user
         return None
     
+    def find_user_by_id(self, user_id):
+        return self.collection.find_one({"user_id": user_id})
+    
 class ClientModel:
     def __init__(self, db):
         self.collection = db.clients
@@ -77,32 +80,44 @@ class UserProfileModel:
     def __init__(self, db):
         self.collection = db.user_profile_data
 
-    def create_profile_data(self, user_id, data):
-        record = {
+    def get_profiles_by_user(self, user_id):
+        return list(self.collection.find({"user_id": user_id},  {"_id": 0, "profile_id": 1, "user_id": 1, "profile_name": 1, "profile_data": 1}))
+
+    def create_profile(self, user_id, profile_id, profile_name, profile_data):
+        print("here 2...", user_id, profile_id, profile_name, profile_data)
+        profile = {
             "user_id": user_id,
-            "data": data,
+            "profile_id": profile_id,
+            "profile_name": profile_name,
+            "profile_data": profile_data,
             "created_at": datetime.now(),
             "updated_at": datetime.now(),
         }
-        return self.collection.insert_one(record)
+        return self.collection.insert_one(profile)
+
+    def update_profile(self, profile_id, user_id, profile_name, profile_data):
+        return self.collection.update_one(
+            {"profile_id": profile_id, "user_id": user_id},
+            {
+                "$set": {
+                    "profile_name": profile_name,
+                    "profile_data": profile_data,
+                    "updated_at": datetime.now(),
+                }
+            },
+        )
+
+    def delete_profile(self, profile_id, user_id):
+        return self.collection.delete_one({"profile_id": profile_id, "user_id": user_id})
 
     def find_records_by_user(self, user_id):
         return list(self.collection.find({"user_id": user_id}))
-
-    def update_record(self, record_id, data):
-        return self.collection.update_one(
-            {"_id": ObjectId(record_id)},
-            {"$set": {"data": data, "updated_at": datetime.now()}},
-        )
-
-    def delete_record(self, record_id):
-        return self.collection.delete_one({"_id": ObjectId(record_id)})
     
 
 class UserProfileMappingModel:
 
     def __init__(self, db):
-        self.collections = db.user_profile_mapping
+        self.collection = db.user_profile_mapping
     
     def create_user_profile_mapping(self, user_id, data):
         record = {
@@ -111,16 +126,13 @@ class UserProfileMappingModel:
             "created_at": datetime.now(),
             "updated_at": datetime.now()
         }
-        return self.collections.insert_one(record)
+        return self.collection.insert_one(record)
 
     def get_profiles_by_user_id(self, user_id):
-        # Find all profile mappings for the user
 
-        print(user_id)
-        profiles = self.collections.find({"user_id": user_id}, {"_id": 0, "profile_id": 1})
+        profiles = self.collection.find({"user_id": user_id}, {"_id": 0, "profile_id": 1})
+        profile_list = list()
+        for p in profiles:
+            profile_list.append(p["profile_id"])
 
-        if profiles:
-            # Extract the profile_id values
-            return [profile["profile_id"] for profile in profiles]
-        else:
-            return []
+        return profile_list
