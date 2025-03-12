@@ -7,13 +7,14 @@ class UserModel:
     def __init__(self, db):
         self.collection = db.users
 
-    def create_user(self, email, password, first_name, last_name):
+    def create_user(self, email, username, password, first_name, last_name):
         hashed_password = generate_password_hash(password)
         user_id = str(uuid.uuid4()) 
         user = {
                     "user_id": user_id, 
                     "email": email,
                     "password": hashed_password,
+                    "username": username,
                     "roles": ["user"],
                     "first_name": first_name,
                     "last_name": last_name,
@@ -21,6 +22,8 @@ class UserModel:
         
         return self.collection.insert_one(user)
 
+    def find_user_by_username(self, username):
+        return self.collection.find_one({"username": username})
 
     def find_user_by_email(self, email):
         return self.collection.find_one({"email": email})
@@ -40,99 +43,136 @@ class UserModel:
     def find_user_by_id(self, user_id):
         return self.collection.find_one({"user_id": user_id})
     
-class ClientModel:
+import secrets
+from datetime import datetime
+
+class VendorModel:
     def __init__(self, db):
-        self.collection = db.clients
+        self.collection = db.vendors
 
-    def create_client(self, email, password, org_name, admin_name, client_type):
-        hashed_password = generate_password_hash(password)
-        client_id = str(uuid.uuid4()) 
-        client = {
-                    "client_id": client_id, 
-                    "email": email,
-                    "password": hashed_password,
-                    "roles": ["client"],
-                    "org_name": org_name,
-                    "client_type": client_type,
-                    "admin_name": admin_name
-                }
+    def find_vendor_by_email(self, email):
+        return self.collection.find_one({"admin_contact": email})
+
+    def create_vendor(self, vendor_name, website_url, admin_name, admin_contact_phone, client_type, admin_contact, password):
+        vendor_id = secrets.token_hex(8)  # Generate a unique vendor_id
+        hashed_password = generate_password_hash(password)  # Hash the password
+        api_key = secrets.token_hex(32)   # Generate a secure API key
+
+        vendor_data = {
+            "vendor_id": vendor_id,
+            "vendor_name": vendor_name,
+            "website_url": website_url,
+            "admin_name": admin_name,
+            "admin_contact_phone": admin_contact_phone,
+            "client_type": client_type,
+            "admin_contact": admin_contact,  # Admin Email
+            "password": hashed_password,  # Hashed Password
+            "vendor_api_key": api_key,  # Unique API Key
+            "created_at": datetime.utcnow(),
+        }
         
-        return self.collection.insert_one(client)
+        self.collection.insert_one(vendor_data)
+        return vendor_data  # Return vendor details, including API key
 
-
-    def find_client_by_email(self, email):
-        return self.collection.find_one({"email": email})
-    
-    def get_client_id_by_email(self, email):
-        client = self.collection.find_one({"email": email}) 
-        if client:
-            return client["client_id"]
-        return None
-
-    def validate_password(self, email, password):
-        client = self.find_client_by_email(email)
-        if client and check_password_hash(client["password"], password):
-            return client
+    def validate_vendor_credentials(self, email, password):
+        vendor = self.collection.find_one({"admin_contact": email})
+        if vendor and check_password_hash(vendor["password"], password):
+            return vendor  # Vendor authenticated
         return None
     
-class UserProfileModel:
+    def validate_vendor_api_key(self, api_key):
+        return self.collection.find_one({"vendor_api_key": api_key}, {"_id": 0, "vendor_id": 1, "vendor_name": 1})
+    
+class ProfileModel:
 
     def __init__(self, db):
         self.collection = db.user_profile_data
 
     def get_profiles_by_user(self, user_id):
-        return list(self.collection.find({"user_id": user_id},  {"_id": 0, "profile_id": 1, "user_id": 1, "profile_name": 1, "profile_data": 1}))
+        return list(self.collection.find({"user_id": user_id}))
 
-    def create_profile(self, user_id, profile_id, profile_name, profile_data):
-        print("here 2...", user_id, profile_id, profile_name, profile_data)
+    def get_profile_by_name(self, user_id, profile_name):
+        return self.collection.find_one({"user_id": user_id, "profile_name": profile_name})
+
+    def create_profile(self, user_id, profile_name, profile_data):
         profile = {
             "user_id": user_id,
-            "profile_id": profile_id,
             "profile_name": profile_name,
             "profile_data": profile_data,
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
         }
         return self.collection.insert_one(profile)
 
-    def update_profile(self, profile_id, user_id, profile_name, profile_data):
+    def update_profile(self, user_id, profile_name, profile_data):
         return self.collection.update_one(
-            {"profile_id": profile_id, "user_id": user_id},
+            {"user_id": user_id, "profile_name": profile_name},
             {
                 "$set": {
-                    "profile_name": profile_name,
                     "profile_data": profile_data,
-                    "updated_at": datetime.now(),
+                    "updated_at": datetime.utcnow(),
                 }
-            },
+            }
         )
 
-    def delete_profile(self, profile_id, user_id):
-        return self.collection.delete_one({"profile_id": profile_id, "user_id": user_id})
-
-    def find_records_by_user(self, user_id):
-        return list(self.collection.find({"user_id": user_id}))
+    def delete_profile(self, user_id, profile_name):
+        return self.collection.delete_one({"user_id": user_id, "profile_name": profile_name})
     
 
-class UserProfileMappingModel:
-
+class VendorRequestLogModel:
     def __init__(self, db):
-        self.collection = db.user_profile_mapping
-    
-    def create_user_profile_mapping(self, user_id, data):
-        record = {
+        self.collection = db.vendor_request_logs
+
+    def log_vendor_request(self, vendor_id, user_id, profile_name):
+        log_entry = {
+            "vendor_id": vendor_id,
             "user_id": user_id,
-            "profile_id": data["profile_id"],
-            "created_at": datetime.now(),
-            "updated_at": datetime.now()
+            "profile_name": profile_name,
+            "timestamp": datetime.utcnow()
         }
-        return self.collection.insert_one(record)
+        self.collection.insert_one(log_entry)
+    
+    def get_logs_by_vendor(self, vendor_id):
+        return self.collection.find({"vendor_id": vendor_id}, {"_id": 0})
 
-    def get_profiles_by_user_id(self, user_id):
+    def get_logs_by_user(self, user_id):
+        return self.collection.find({"user_id": user_id}, {"_id": 0})
+    
 
-        profiles = self.collection.find({"user_id": user_id}, {"_id": 0, "profile_id": 1})
-        profile_list = list()
-        for p in profiles:
-            profile_list.append(p["profile_id"])
 
-        return profile_list
+class UserApprovalRequestModel:
+    def __init__(self, db):
+        self.collection = db.user_approval_requests
+
+    def create_request(self, vendor_id, vendor_name, website_url, user_id, profile_name):
+        request_entry = {
+            "vendor_id": vendor_id,
+            "vendor_name": vendor_name,
+            "website_url": website_url,
+            "user_id": user_id,
+            "profile_name": profile_name,
+            "status": "Pending",
+            "timestamp": datetime.utcnow()
+        }
+        self.collection.insert_one(request_entry)
+
+    def get_requests_for_user(self, user_id):
+        requests = list(self.collection.find(
+            {"user_id": user_id},
+            {"_id": 1, "vendor_id": 1, "vendor_name": 1, "profile_name": 1, "status": 1, "timestamp": 1}
+        ))
+
+        # Convert ObjectId to string
+        for req in requests:
+            req["_id"] = str(req["_id"])
+
+        return requests
+
+    def get_requests_for_vendor(self, vendor_id):
+        return list(self.collection.find({"vendor_id": vendor_id}, {"_id": 1, "user_id": 1, "profile_name": 1, "status": 1, "timestamp": 1}))
+
+    def update_request_status(self, request_id, user_id, status):
+        return self.collection.update_one({"_id": ObjectId(request_id), "user_id": user_id}, {"$set": {"status": status}}).modified_count > 0
+
+    def get_request_by_id(self, request_id):
+        return self.collection.find_one({"_id": ObjectId(request_id)})

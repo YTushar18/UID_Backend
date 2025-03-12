@@ -12,7 +12,14 @@ def create_app():
     jwt = JWTManager(app)
 
     # Enable CORS for all routes and origins
-    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+    CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:3001", "http://127.0.0.1:3001","http://192.168.1.97:3001", "*"],  # Allow Next.js dev server
+        "allow_headers": ["Content-Type", "Authorization"],
+        "methods": ["GET", "POST", "PUT", "DELETE"],
+        "supports_credentials": True,
+    }
+})
 
     # MongoDB Connection
     client = MongoClient(app.config["MONGO_URI"])
