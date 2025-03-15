@@ -4,7 +4,7 @@ from flask import Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import current_app
 from app.middleware import authenticate_vendor
-from app.models import VendorModel, ProfileModel, UserModel, VendorRequestLogModel, UserApprovalRequestModel
+from app.models import ProfileModel, UserApprovalRequestModel
 
 # def fetch_user_profile():
 #     db = current_app.db
@@ -82,28 +82,15 @@ def vendor_fetch_user_data():
     data = request.get_json()
     unique_user_id = data.get("unique_user_id")
     profile_name = data.get("profile_name")
+    comments = data.get("comments")
 
     if not all([unique_user_id, profile_name]):
         return jsonify({"status": "error", "message": "Missing required fields"}), 400
 
     # Log request as pending
-    request_model.create_request(vendor["vendor_id"], vendor["vendor_name"], vendor["website_url"], unique_user_id, profile_name)
+    request_model.create_request(vendor["vendor_id"], vendor["vendor_name"], vendor["website_url"], unique_user_id, profile_name, comments)
 
     return jsonify({"status": "success", "message": "Request logged and pending approval"}), 201
-
-
-@jwt_required()
-def get_vendor_requests():
-    db = current_app.db
-    request_log_model = VendorRequestLogModel(db)
-
-    # Extract vendor ID from JWT token
-    vendor_id = get_jwt_identity()
-
-    # Fetch request logs for the vendor
-    logs = list(request_log_model.get_logs_by_vendor(vendor_id))
-    
-    return jsonify({"status": "success", "logs": logs}), 200
 
 
 # API to Fetch All Requests Made by a Vendor (Vendor Dashboard)
@@ -232,6 +219,7 @@ def get_vendor_requests_table():
 
     # Collections
     request_model = db.user_approval_requests
+    user_model = db.users  # Reference to users collection
 
     # Fetch all requests for the vendor
     requests = list(request_model.find(
@@ -239,9 +227,16 @@ def get_vendor_requests_table():
         {"_id": 1, "user_id": 1, "profile_name": 1, "status": 1, "timestamp": 1}
     ).sort("timestamp", -1))
 
-    # Convert ObjectId to string
+    # Convert ObjectId to string and replace user_id with username
     for req in requests:
         req["_id"] = str(req["_id"])
+
+        # Fetch username from users collection
+        user = user_model.find_one({"user_id": req["user_id"]}, {"_id": 0, "username": 1})
+        req["username"] = user["username"] if user else "Unknown"
+
+        # Remove user_id from response
+        del req["user_id"]
 
     return jsonify({
         "status": "success",
@@ -252,28 +247,34 @@ def get_vendor_requests_table():
 
 @jwt_required()
 def create_data_request_from_dashboard():
-
     db = current_app.db
     request_model = UserApprovalRequestModel(db)
 
     # Parse request data
     data = request.get_json()
-    unique_user_id = data.get("unique_user_id")
+    username = data.get("unique_user_id")  # unique_user_id is actually the username
     profile_name = data.get("profile_name")
+    comments = data.get("comments")
 
-    if not all([unique_user_id, profile_name]):
+    if not all([username, profile_name]):
         return jsonify({"status": "error", "message": "Missing required fields"}), 400
     
     vendor_id = get_jwt_identity()
 
-    print(vendor_id)
-
-    # Validate API Key
+    # Validate Vendor
     vendor = db.vendors.find_one({"vendor_id": vendor_id})
     if not vendor:
-        return jsonify({"status": "error", "message": "Invalid API key"}), 403
+        return jsonify({"status": "error", "message": "Invalid Vendor"}), 403
+
+    # Validate User by checking username in the users collection
+    user = db.users.find_one({"username": username}, {"_id": 0, "user_id": 1})
+    if not user:
+        return jsonify({"status": "error", "message": "User not found"}), 404
+
+    # Extract the actual user_id from the query result
+    user_id = user["user_id"]
 
     # Log request as pending
-    request_model.create_request(vendor["vendor_id"], vendor["vendor_name"], vendor["website_url"], unique_user_id, profile_name)
+    request_model.create_request(vendor["vendor_id"], vendor["vendor_name"], vendor["website_url"], user_id, profile_name, comments)
 
     return jsonify({"status": "success", "message": "Request logged and pending approval"}), 201

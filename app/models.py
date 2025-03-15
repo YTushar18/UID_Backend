@@ -116,41 +116,21 @@ class ProfileModel:
         )
 
     def delete_profile(self, user_id, profile_name):
-        return self.collection.delete_one({"user_id": user_id, "profile_name": profile_name})
-    
-
-class VendorRequestLogModel:
-    def __init__(self, db):
-        self.collection = db.vendor_request_logs
-
-    def log_vendor_request(self, vendor_id, user_id, profile_name):
-        log_entry = {
-            "vendor_id": vendor_id,
-            "user_id": user_id,
-            "profile_name": profile_name,
-            "timestamp": datetime.utcnow()
-        }
-        self.collection.insert_one(log_entry)
-    
-    def get_logs_by_vendor(self, vendor_id):
-        return self.collection.find({"vendor_id": vendor_id}, {"_id": 0})
-
-    def get_logs_by_user(self, user_id):
-        return self.collection.find({"user_id": user_id}, {"_id": 0})
-    
+        return self.collection.delete_one({"user_id": user_id, "profile_name": profile_name}) 
 
 
 class UserApprovalRequestModel:
     def __init__(self, db):
         self.collection = db.user_approval_requests
 
-    def create_request(self, vendor_id, vendor_name, website_url, user_id, profile_name):
+    def create_request(self, vendor_id, vendor_name, website_url, user_id, profile_name, comments):
         request_entry = {
             "vendor_id": vendor_id,
             "vendor_name": vendor_name,
             "website_url": website_url,
             "user_id": user_id,
             "profile_name": profile_name,
+            "comments": comments,
             "status": "Pending",
             "timestamp": datetime.utcnow()
         }
