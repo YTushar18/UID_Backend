@@ -4,7 +4,7 @@ from flask import Response
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import current_app
 from app.middleware import authenticate_vendor
-from app.models import ProfileModel, UserApprovalRequestModel
+from app.models import ProfileModel, UserApprovalRequestModel, CustomRequestModel
 
 # def fetch_user_profile():
 #     db = current_app.db
@@ -278,3 +278,77 @@ def create_data_request_from_dashboard():
     request_model.create_request(vendor["vendor_id"], vendor["vendor_name"], vendor["website_url"], user_id, profile_name, comments)
 
     return jsonify({"status": "success", "message": "Request logged and pending approval"}), 201
+
+
+
+
+@jwt_required()
+def create_data_request_from_dashboard_custom():
+    db = current_app.db
+    custom_request_model = CustomRequestModel(db)
+
+    # Parse request data
+    data = request.get_json()
+    username = data.get("username")  # unique_user_id is actually the username
+    custom_fields = data.get("custom_fields")
+    comments = data.get("comments")
+
+    if not username:
+        return jsonify({"status": "error", "message": "Username is required"}), 400
+
+    vendor_id = get_jwt_identity()
+
+    # Validate Vendor
+    vendor = db.vendors.find_one({"vendor_id": vendor_id})
+    if not vendor:
+        return jsonify({"status": "error", "message": "Invalid Vendor"}), 403
+
+    # Validate User by checking username in the users collection
+    user = db.users.find_one({"username": username}, {"_id": 0, "user_id": 1})
+    if not user:
+        return jsonify({"status": "error", "message": "User not found"}), 404
+
+    # Extract the actual user_id from the query result
+    user_id = user["user_id"]
+
+    # Log request as pending in the custom requests table
+    custom_request_model.create_custom_request(
+        vendor["vendor_id"], vendor["vendor_name"], vendor["website_url"],
+        user_id, custom_fields, comments
+    )
+
+    return jsonify({"status": "success", "message": "Custom request logged and pending approval"}), 201
+
+
+
+@jwt_required()
+def get_vendor_custom_requests():
+    db = current_app.db
+    vendor_id = get_jwt_identity()
+
+    # Collections
+    custom_request_model = db.custom_requests
+    user_model = db.users  # Reference to users collection
+
+    # Fetch all custom requests for the vendor
+    requests = list(custom_request_model.find(
+        {"vendor_id": vendor_id},
+        {"_id": 1, "user_id": 1, "custom_fields": 1, "comments": 1, "status": 1, "timestamp": 1}
+    ).sort("timestamp", -1))
+
+    # Convert ObjectId to string and replace user_id with username
+    for req in requests:
+        req["_id"] = str(req["_id"])
+
+        # Fetch username from users collection
+        user = user_model.find_one({"user_id": req["user_id"]}, {"_id": 0, "username": 1})
+        req["username"] = user["username"] if user else "Unknown"
+
+        # Remove user_id from response
+        del req["user_id"]
+
+    return jsonify({
+        "status": "success",
+        "total_custom_requests": len(requests),
+        "requests": requests
+    }), 200

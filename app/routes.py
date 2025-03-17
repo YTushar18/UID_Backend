@@ -2,8 +2,9 @@ from app.controllers.auth_controller import register_user, login_user, refresh_t
 from app.controllers.data_controller import healthcheck, get_profiles, create_profile, edit_profile
 from app.controllers.data_controller import  delete_profile, get_user_requests, update_request_status, get_user_dashboard_summary
 from app.controllers.auth_controller import register_vendor, vendor_login
-from app.controllers.vendor_controller import get_vendor_requests, vendor_fetch_user_data, download_approved_data
+from app.controllers.vendor_controller import get_vendor_requests, vendor_fetch_user_data, download_approved_data, create_data_request_from_dashboard_custom
 from app.controllers.vendor_controller import get_vendor_dashboard_summary, get_vendor_requests_table, create_data_request_from_dashboard
+from app.controllers.vendor_controller import get_vendor_custom_requests
 
 def register_routes(app):
 
@@ -42,6 +43,7 @@ def register_routes(app):
     app.add_url_rule("/api/auth/refresh", view_func=refresh_token, methods=["POST"])
     # Vendor Fetch User Profile API
     # app.add_url_rule("/api/vendor/fetch-user", view_func=fetch_user_profile, methods=["POST"])
+
     # Get vendor request logs
     app.add_url_rule("/api/vendor/logs", view_func=get_vendor_requests, methods=["GET"])
 
@@ -65,3 +67,9 @@ def register_routes(app):
     
     #request user data from dashboard
     app.add_url_rule("/api/vendor/request-data-dashboard", view_func=create_data_request_from_dashboard, methods=["POST"])
+
+    #request user Custom data from dashboard
+    app.add_url_rule("/api/vendor/request-data-dashboard-custom", view_func=create_data_request_from_dashboard_custom, methods=["POST"])
+
+    # API for Vendor Custom Requests Table
+    app.add_url_rule("/api/vendor/custom-requests", view_func=get_vendor_custom_requests, methods=["GET"])

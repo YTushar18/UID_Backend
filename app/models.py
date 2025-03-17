@@ -156,3 +156,24 @@ class UserApprovalRequestModel:
 
     def get_request_by_id(self, request_id):
         return self.collection.find_one({"_id": ObjectId(request_id)})
+    
+
+
+from datetime import datetime
+
+class CustomRequestModel:
+    def __init__(self, db):
+        self.collection = db.custom_requests  # New MongoDB Collection
+
+    def create_custom_request(self, vendor_id, vendor_name, website_url, user_id, custom_fields, comments):
+        request_data = {
+            "vendor_id": vendor_id,
+            "vendor_name": vendor_name,
+            "website_url": website_url,
+            "user_id": user_id,
+            "custom_fields": custom_fields,
+            "comments": comments,
+            "status": "Pending",
+            "timestamp": datetime.utcnow()
+        }
+        return self.collection.insert_one(request_data)
