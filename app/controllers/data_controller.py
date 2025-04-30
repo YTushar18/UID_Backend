@@ -1,8 +1,10 @@
 from flask import request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models import ProfileModel, UserModel
-from app.models import UserApprovalRequestModel
+from app.models import UserApprovalRequestModel, CustomRequestModel
+from collections import defaultdict
 from flask import current_app
+from bson import ObjectId
 
 @jwt_required()
 def healthcheck():
@@ -205,7 +207,7 @@ def update_request_status():
     request_id = data.get("request_id")
     status = data.get("status")  # "Approved" or "Rejected"
 
-    if status not in ["Approved", "Rejected"]:
+    if status not in ["Approved", "Rejected", "Malicious"]:
         return jsonify({"status": "error", "message": "Invalid status"}), 400
 
     updated = request_model.update_request_status(request_id, user_id, status)
@@ -213,6 +215,39 @@ def update_request_status():
     if updated:
         return jsonify({"status": "success", "message": f"Request {status}"}), 200
     return jsonify({"status": "error", "message": "Request not found or unauthorized"}), 404
+
+
+@jwt_required()
+def update_custom_request_status():
+    db = current_app.db
+    user_id = get_jwt_identity()
+
+    data = request.get_json()
+    request_id = data.get("request_id")
+    status = data.get("status")  # Expected: "Approved" or "Rejected"
+    field_values = data.get("custom_fields", {})  # Optional
+
+    if not request_id or status not in ["Approved", "Rejected", "Malicious"]:
+        return jsonify({"status": "error", "message": "Request ID and valid status are required"}), 400
+
+    # Find the request by ID and user
+    custom_request_model = db.custom_requests
+    req = custom_request_model.find_one({"_id": ObjectId(request_id), "user_id": user_id})
+    if not req:
+        return jsonify({"status": "error", "message": "Request not found or unauthorized"}), 404
+
+    # Prepare update fields
+    update_fields = {"status": status}
+    if status == "Approved" and field_values:
+        update_fields["custom_fields"] = field_values
+
+    # Perform the update
+    custom_request_model.update_one(
+        {"_id": ObjectId(request_id)},
+        {"$set": update_fields}
+    )
+
+    return jsonify({"status": "success", "message": f"Request {status.lower()} successfully"}), 200
 
 
 
@@ -242,3 +277,101 @@ def get_user_requests():
             req["vendor_website"] = "N/A"
 
     return jsonify({"status": "success", "requests": requests}), 200
+
+
+# API to Fetch All Requests for a User (User Dashboard)
+# This API returns custom requests for the logged-in user (both pending and approved/rejected).
+@jwt_required()
+def get_user_custom_requests():
+    db = current_app.db
+    user_id = get_jwt_identity()
+
+    # Collections
+    custom_request_model = db.custom_requests
+    vendor_model = db.vendors  # Reference to vendors collection
+
+    # Fetch all custom requests for the user
+    requests = list(custom_request_model.find(
+        {"user_id": user_id},
+        {"_id": 1, "vendor_id": 1, "custom_fields": 1, "comments": 1, "status": 1, "timestamp": 1}
+    ).sort("timestamp", -1))
+
+    # Convert ObjectId to string and replace vendor_id with vendor details
+    for req in requests:
+        req["_id"] = str(req["_id"])
+
+        # Fetch vendor details
+        vendor = vendor_model.find_one({"vendor_id": req["vendor_id"]}, {"_id": 0, "vendor_name": 1, "website_url": 1})
+        req["vendor_name"] = vendor["vendor_name"] if vendor else "Unknown Vendor"
+        req["website_url"] = vendor["website_url"] if vendor else "N/A"
+
+        # Remove vendor_id from response
+        del req["vendor_id"]
+
+    return jsonify({
+        "status": "success",
+        "total_custom_requests": len(requests),
+        "requests": requests
+    }), 200
+
+
+@jwt_required()
+def get_user_dashboard_analytics():
+    db = current_app.db
+    user_id = get_jwt_identity()
+
+    # Collections
+    profile_model = db.user_profile_data
+    request_model = db.user_approval_requests
+
+    user_profiles = list(profile_model.find({"user_id": user_id}))
+    total_profiles = len(user_profiles)
+
+    user_requests = list(request_model.find({"user_id": user_id}))
+
+    status_counts = defaultdict(int)
+    profile_counts = defaultdict(int)
+    requests_by_date = defaultdict(int)
+    status_over_time = defaultdict(lambda: defaultdict(int))
+
+    for r in user_requests:
+        status_counts[r["status"]] += 1
+        profile_counts[r["profile_name"]] += 1
+
+        date_key = r["timestamp"].strftime("%Y-%m-%d")
+        requests_by_date[date_key] += 1
+        status_over_time[date_key][r["status"]] += 1
+
+    recent_profiles = sorted(user_profiles, key=lambda x: x.get("updated_at", x["created_at"]), reverse=True)[:3]
+    recent_requests = sorted(user_requests, key=lambda x: x["timestamp"], reverse=True)[:3]
+
+    return jsonify({
+        "status": "success",
+        "data": {
+            "total_profiles": total_profiles,
+            "pending_requests": status_counts["Pending"],
+            "approved_requests": status_counts["Approved"],
+            "rejected_requests": status_counts["Rejected"],
+            "recent_profiles": [
+                {
+                    "profile_name": p.get("profile_name", ""),
+                    "updated_at": p.get("updated_at", p.get("created_at")).isoformat()
+                }
+                for p in recent_profiles
+            ],
+            "recent_requests": [
+                {
+                    "vendor": r.get("vendor_name"),
+                    "profile_name": r.get("profile_name"),
+                    "status": r.get("status"),
+                    "timestamp": r.get("timestamp").isoformat()
+                }
+                for r in recent_requests
+            ],
+            "chart_data": {
+                "requests_by_date": dict(requests_by_date),
+                "status_over_time": {k: dict(v) for k, v in status_over_time.items()},
+                "profile_request_distribution": dict(profile_counts)
+            }
+        }
+    }), 200

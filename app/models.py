@@ -154,6 +154,7 @@ class UserApprovalRequestModel:
     def update_request_status(self, request_id, user_id, status):
         return self.collection.update_one({"_id": ObjectId(request_id), "user_id": user_id}, {"$set": {"status": status}}).modified_count > 0
 
+
     def get_request_by_id(self, request_id):
         return self.collection.find_one({"_id": ObjectId(request_id)})
     
@@ -177,3 +178,6 @@ class CustomRequestModel:
             "timestamp": datetime.utcnow()
         }
         return self.collection.insert_one(request_data)
+    
+    def update_custom_request_status(self, request_id, user_id, status):
+        return self.collection.update_one({"_id": ObjectId(request_id), "user_id": user_id}, {"$set": {"status": status}}).modified_count > 0

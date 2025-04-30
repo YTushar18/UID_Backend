@@ -1,64 +1,12 @@
 from flask import request, jsonify
 import json
+from app.utils import send_email
 from flask import Response
+from collections import defaultdict
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask import current_app
 from app.middleware import authenticate_vendor
 from app.models import ProfileModel, UserApprovalRequestModel, CustomRequestModel
-
-# def fetch_user_profile():
-#     db = current_app.db
-#     vendor_model = VendorModel(db)
-#     profile_model = ProfileModel(db)
-#     user_model = UserModel(db)
-#     request_log_model = VendorRequestLogModel(db)  # Instantiate logging model
-
-#     # Get API key from headers
-#     api_key = request.headers.get("Authorization")
-#     if not api_key or not api_key.startswith("Bearer "):
-#         return jsonify({"status": "error", "message": "Missing or invalid API Key"}), 401
-
-#     # Extract actual key from "Bearer <API_KEY>"
-#     api_key = api_key.split(" ")[1]
-
-#     # Validate API Key
-#     vendor = vendor_model.validate_vendor_api_key(api_key)
-#     if not vendor:
-#         return jsonify({"status": "error", "message": "Invalid API Key"}), 403
-
-#     vendor_id = vendor["vendor_id"]
-
-#     # Extract request data
-#     data = request.get_json()
-#     unique_user_id = data.get("unique_user_id")
-#     profile_name = data.get("profile_name")
-
-#     if not all([unique_user_id, profile_name]):
-#         return jsonify({"status": "error", "message": "unique_user_id and profile_name are required"}), 400
-
-#     # Check if user exists
-#     user = user_model.find_user_by_id(unique_user_id)
-#     if not user:
-#         return jsonify({"status": "error", "message": "User not found"}), 404
-
-#     # Fetch the user's profile
-#     profile = profile_model.get_profile_by_name(unique_user_id, profile_name)
-#     if not profile:
-#         return jsonify({"status": "error", "message": "Profile not found"}), 404
-
-#     # Log the vendor request
-#     request_log_model.log_vendor_request(vendor_id, unique_user_id, profile_name)
-
-#     # Return profile data (excluding sensitive information)
-#     filtered_data = {key: value for key, value in profile["profile_data"].items() if key != "ssn"}
-
-#     return jsonify({
-#         "status": "success",
-#         "user_id": unique_user_id,
-#         "profile_name": profile_name,
-#         "profile_data": filtered_data
-#     }), 200
-
 
 # Vendor Fetch User Data API
 # This API will log a request instead of returning data immediately. The request will be marked as pending until the user approves it.
@@ -92,7 +40,6 @@ def vendor_fetch_user_data():
 
     return jsonify({"status": "success", "message": "Request logged and pending approval"}), 201
 
-
 # API to Fetch All Requests Made by a Vendor (Vendor Dashboard)
 # This API returns all vendor requests, so vendors can track pending, approved, and rejected requests.
 @jwt_required()
@@ -104,7 +51,6 @@ def get_vendor_requests():
     requests = request_model.get_requests_for_vendor(vendor_id)
 
     return jsonify({"status": "success", "requests": requests}), 200
-
 
 # API for Vendors to Download Approved Data
 # Vendors can only download user data if the request is approved.
@@ -173,7 +119,6 @@ def download_approved_data():
     # Convert to JSON and return as a downloadable file
     json_data = json.dumps(user_profiles, indent=4)
     return Response(json_data, mimetype="application/json", headers={"Content-Disposition": "attachment;filename=approved_profiles.json"})
-
 
 
 @jwt_required()
@@ -277,6 +222,30 @@ def create_data_request_from_dashboard():
     # Log request as pending
     request_model.create_request(vendor["vendor_id"], vendor["vendor_name"], vendor["website_url"], user_id, profile_name, comments)
 
+    # After request_model.create_request(...)
+    # user = db.users.find_one({"username": username}, {"_id": 0, "email": 1, "first_name": 1})
+    # if user:
+    #     user_email = user.get("email")
+    #     user_name = user.get("first_name", "User")
+
+    #     subject = f"New Data Access Request from {vendor['vendor_name']}"
+    #     content = f"""
+    #                 Hi {user_name},
+
+    #                 You have a new request from {vendor['vendor_name']} ({vendor['website_url']}) to access your profile: {profile_name}.
+
+    #                 Please log in to your dashboard to approve or reject this request.
+
+    #                 Thank you,
+    #                 Universal Identity Nexus
+    #                 """
+    #     print("Sending email to:", user_email)
+    #     print("Subject:", subject)
+    #     print("Content:", content)
+    #     response = send_email(user_email, subject, content)
+    #     if response.status_code != 200:
+    #         print("Mailgun Error:", response.text)
+
     return jsonify({"status": "success", "message": "Request logged and pending approval"}), 201
 
 
@@ -290,11 +259,11 @@ def create_data_request_from_dashboard_custom():
     # Parse request data
     data = request.get_json()
     username = data.get("username")  # unique_user_id is actually the username
-    custom_fields = data.get("custom_fields")
+    custom_fields = data.get("custom_fields")  # This should be a list of field keys
     comments = data.get("comments")
 
-    if not username:
-        return jsonify({"status": "error", "message": "Username is required"}), 400
+    if not username or not custom_fields or not isinstance(custom_fields, dict):
+        return jsonify({"status": "error", "message": "Username and custom_fields list are required"}), 400
 
     vendor_id = get_jwt_identity()
 
@@ -311,11 +280,44 @@ def create_data_request_from_dashboard_custom():
     # Extract the actual user_id from the query result
     user_id = user["user_id"]
 
+    # Transform list of keys into a dictionary
+    structured_fields = {key: "" for key in custom_fields}
+
     # Log request as pending in the custom requests table
     custom_request_model.create_custom_request(
-        vendor["vendor_id"], vendor["vendor_name"], vendor["website_url"],
-        user_id, custom_fields, comments
+        vendor["vendor_id"],
+        vendor["vendor_name"],
+        vendor["website_url"],
+        user_id,
+        structured_fields,
+        comments
     )
+
+    # After request_model.create_request(...)
+    # user = db.users.find_one({"username": username}, {"_id": 0, "email": 1, "first_name": 1})
+    # if user:
+    #     user_email = user.get("email")
+    #     user_name = user.get("first_name", "User")
+
+    #     subject = f"New Data Access Request from {vendor['vendor_name']}"
+    #     content = f"""
+    #                 Hi {user_name},
+
+    #                 You have a new request from {vendor['vendor_name']} ({vendor['website_url']}) to access your profile: {profile_name}.
+
+    #                 Please log in to your dashboard to approve or reject this request.
+
+    #                 Thank you,
+    #                 Universal Identity Nexus
+    #                 """
+        
+    #     print("Sending email to:", user_email)
+    #     print("Subject:", subject)
+    #     print("Content:", content)
+
+    #     response = send_email(user_email, subject, content)
+    #     if response.status_code != 200:
+    #         print("Mailgun Error:", response.text)
 
     return jsonify({"status": "success", "message": "Custom request logged and pending approval"}), 201
 
@@ -351,4 +353,99 @@ def get_vendor_custom_requests():
         "status": "success",
         "total_custom_requests": len(requests),
         "requests": requests
+    }), 200
+
+
+
+@jwt_required()
+def get_vendor_details():
+    db = current_app.db
+    vendor_id = get_jwt_identity()
+
+    # Fetch vendor details from the vendors collection
+    vendor = db.vendors.find_one({"vendor_id": vendor_id}, {"_id": 0, "password": 0})
+
+    if not vendor:
+        return jsonify({"status": "error", "message": "Vendor not found"}), 404
+
+    return jsonify({
+        "status": "success",
+        "vendor": vendor
+    }), 200
+
+
+@jwt_required()
+def update_vendor_details():
+    db = current_app.db
+    vendor_id = get_jwt_identity()
+
+    # Parse update fields
+    data = request.get_json()
+    allowed_fields = [
+        "vendor_name", "website_url", "admin_name", 
+        "admin_contact_phone", "client_type", "admin_contact"
+    ]
+    update_data = {key: value for key, value in data.items() if key in allowed_fields}
+
+    if not update_data:
+        return jsonify({"status": "error", "message": "No valid fields provided for update"}), 400
+
+    # Update the vendor record
+    result = db.vendors.update_one(
+        {"vendor_id": vendor_id},
+        {"$set": update_data}
+    )
+
+    if result.modified_count == 0:
+        return jsonify({"status": "warning", "message": "No changes made or vendor not found"}), 200
+
+    return jsonify({"status": "success", "message": "Vendor details updated successfully"}), 200
+
+@jwt_required()
+def get_vendor_dashboard_analytics():
+    db = current_app.db
+    vendor_id = get_jwt_identity()
+
+    request_model = db.user_approval_requests
+    vendor_requests = list(request_model.find({"vendor_id": vendor_id}))
+
+    total_requests = len(vendor_requests)
+    status_counts = defaultdict(int)
+    profile_counts = defaultdict(int)
+    requests_by_date = defaultdict(int)
+    status_over_time = defaultdict(lambda: defaultdict(int))
+
+    for r in vendor_requests:
+        status_counts[r["status"]] += 1
+        profile_counts[r["profile_name"]] += 1
+
+        date_key = r["timestamp"].strftime("%Y-%m-%d")
+        requests_by_date[date_key] += 1
+        status_over_time[date_key][r["status"]] += 1
+
+    approval_rate = (status_counts["Approved"] / total_requests * 100) if total_requests > 0 else 0
+    recent_requests = sorted(vendor_requests, key=lambda x: x["timestamp"], reverse=True)[:3]
+
+    return jsonify({
+        "status": "success",
+        "data": {
+            "active_requests": status_counts["Pending"],
+            "verified_users": status_counts["Approved"],
+            "rejected_requests": status_counts["Rejected"],
+            "approval_rate": round(approval_rate, 2),
+            "recent_requests": [
+                {
+                    "username": r.get("username", "Unknown"),
+                    "profile_name": r.get("profile_name"),
+                    "status": r.get("status"),
+                    "timestamp": r.get("timestamp").isoformat()
+                }
+                for r in recent_requests
+            ],
+            "chart_data": {
+                "requests_by_date": dict(requests_by_date),
+                "status_over_time": {k: dict(v) for k, v in status_over_time.items()},
+                "profile_request_distribution": dict(profile_counts)
+            }
+        }
     }), 200

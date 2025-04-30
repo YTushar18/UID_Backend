@@ -80,8 +80,9 @@ def register_vendor():
     client_type = data.get("client_type")  # Type of Organization
     admin_contact = data.get("admin_contact")  # Admin Email
     password = data.get("password")  # Password
+    risk_score = data.get("risk_score")  # Risk Score
 
-    if not all([vendor_name, website_url, admin_name, admin_contact_phone, client_type, admin_contact, password]):
+    if not all([vendor_name, website_url, admin_name, admin_contact_phone, client_type, admin_contact, password, risk_score]):
         return jsonify({"status": "error", "message": "All fields are required"}), 400
 
     # Check if vendor already exists (by email)
@@ -89,7 +90,7 @@ def register_vendor():
         return jsonify({"status": "error", "message": "Vendor with this email already exists"}), 400
 
     # Create vendor and generate API key
-    vendor_data = vendor_model.create_vendor(vendor_name, website_url, admin_name, admin_contact_phone, client_type, admin_contact, password)
+    vendor_data = vendor_model.create_vendor(vendor_name, website_url, admin_name, admin_contact_phone, client_type, admin_contact, password, risk_score)
 
     return jsonify({
         "status": "success",
