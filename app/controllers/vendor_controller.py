@@ -406,6 +406,9 @@ def get_vendor_dashboard_analytics():
     db = current_app.db
     vendor_id = get_jwt_identity()
 
+    vendor = db.vendors.find_one({"vendor_id": vendor_id}, {"risk_score": 1})
+    risk_score = vendor.get("risk_score", 0) if vendor else 0
+
     request_model = db.user_approval_requests
     vendor_requests = list(request_model.find({"vendor_id": vendor_id}))
 
@@ -432,6 +435,7 @@ def get_vendor_dashboard_analytics():
             "active_requests": status_counts["Pending"],
             "verified_users": status_counts["Approved"],
             "rejected_requests": status_counts["Rejected"],
+            "risk_score": risk_score,
             "approval_rate": round(approval_rate, 2),
             "recent_requests": [
                 {

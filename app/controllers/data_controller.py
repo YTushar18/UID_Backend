@@ -1,6 +1,7 @@
 from flask import request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.models import ProfileModel, UserModel
+from app.risk_calculations import update_vendor_risk_score
 from app.models import UserApprovalRequestModel, CustomRequestModel
 from collections import defaultdict
 from flask import current_app
@@ -9,6 +10,23 @@ from bson import ObjectId
 @jwt_required()
 def healthcheck():
     return jsonify({"status": "success", "message": "All systems are working fine"}), 201
+
+
+def get_vendor_id_from_request_id(db, request_id, request_type="regular"):
+    try:
+        request_id_obj = ObjectId(request_id)
+    except Exception:
+        return None  # Invalid ObjectId
+
+    if request_type == "regular":
+        collection = db.user_approval_requests
+    elif request_type == "custom":
+        collection = db.custom_requests
+    else:
+        return None
+
+    doc = collection.find_one({"_id": request_id_obj}, {"vendor_id": 1})
+    return doc["vendor_id"] if doc else None
 
 # This API will return key metrics for the User Dashboard.
 @jwt_required()
@@ -212,6 +230,9 @@ def update_request_status():
 
     updated = request_model.update_request_status(request_id, user_id, status)
 
+    vendor_id = get_vendor_id_from_request_id(db, request_id, "regular")
+    update_vendor_risk_score(vendor_id, status)
+
     if updated:
         return jsonify({"status": "success", "message": f"Request {status}"}), 200
     return jsonify({"status": "error", "message": "Request not found or unauthorized"}), 404
@@ -240,6 +261,9 @@ def update_custom_request_status():
     update_fields = {"status": status}
     if status == "Approved" and field_values:
         update_fields["custom_fields"] = field_values
+    
+    vendor_id = get_vendor_id_from_request_id(db, request_id, "custom")
+    update_vendor_risk_score(vendor_id, status)
 
     # Perform the update
     custom_request_model.update_one(
